@@ -22,9 +22,10 @@ __pycache__/
 
 # logs
 *.log
-**/data/reports/*.csv
 
-# Node (Frontend)
+# Allow specific report output
+!**/data/reports/
+!**/data/reports/*.csv
 frontend/node_modules/
 frontend/dist/
 frontend/.env
