@@ -1,0 +1,696 @@
+{
+  "name": "physical_refinary_anomaly",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -416,
+        -16
+      ],
+      "id": "f620be33-ef47-4923-abc3-716e2824d575",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n    a.name AS tank_id,\n    (d.value->>'TankOilLevelInFeet001')::float AS level_feet,\n    (d.value->>'Timestamp')::timestamp AS sensor_timestamp,\n    d.timestamp AS db_timestamp\nFROM asset_datapoint d\nJOIN asset a ON d.entity_id = a.id\nWHERE d.entity_id IN (\n    '2TV1OLqZSv5JwIEHomeRR1',\n    '6UXHYoFE9as4nc25HA72AN',\n    '5UwgGOBQ8VqdVZO37E1ci8',\n    '2H7Gj65gRcLS1V6OTq72Hk',\n    '7BKD81c3z8gKpGZt5bIc87',\n    '2pd9BV69qYHsnoyiAAqJmX',\n  '50Y5udYfIWJWLEbduASYwT',\n  '6tUKaWyipyL8MfjaTntrSH',\n  '6UrAIw3WfeBmCn7yYgHGKR',\n  '64G6XlehtAyuhFP6U5V9iB',\n  '7gmxORynTjM8Lmp4DDtZSP',\n  '4la3XSG9sUisBdczxxjYLv'\n)\nAND d.timestamp >= NOW() - INTERVAL '1 hour'\nAND d.attribute_name = 'data'\nORDER BY a.name, d.timestamp DESC",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -208,
+        -16
+      ],
+      "id": "11b61fc9-2aa7-4cc9-811f-ba15250a7fe5",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "34JsQfkTIP9MRhuo",
+          "name": "Postgres account Openremote"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => ({\n  json: {\n    tank_id: (item.json.tank_id || \"Unknown\")\n      .toString()\n      .trim()\n      .toLowerCase()\n      .replace(/([a-z])([0-9])/g, '$1_$2'), \n    level_feet: Number(item.json.level_feet),\n    sensor_timestamp: item.json.sensor_timestamp\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        -16
+      ],
+      "id": "7ba624de-00b6-4dcc-b5d2-074cad6b2491",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        624,
+        -160
+      ],
+      "id": "bd84860b-4816-49ff-9e5d-b886cec3b61a",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Please analyze the following tank data and provide a summary:\nTank: {{ $json.tank_id }}\nStatus: {{ $json.level }} \nAnomaly: {{ $json.anomaly }}\nthreshold: {{ $json.threshold }}\nreconstruction_error: {{ $json.reconstruction_error }}\n(Intensity: {{ $json.intense }}/7)\nRecent Issues: {{ JSON.stringify($json.anomalies) }}\nlevel: {{ $json.level }}",
+        "options": {
+          "systemMessage": "System Prompt for n8n AI Model\nRole: Expert Oil Terminal Supervisor.\nTask: Analyze the input JSON {{ JSON.stringify($json) }} and generate a concise, to-the-point report.\n\nStrict Rules:\n\nUse ONLY provided data: tank_id, reconstruction_error, threshold, anomaly_count, anomalies.\n\nDo NOT invent or hallucinate data.\n\nIf level_feet is 0, ALWAYS flag it as \"Hardware Failure\" in the table/notes.\n\nLimit Data Table: If anomalies exist, show ONLY the first 2 or 3 readings.\n\nConciseness: Provide direct output without conversational filler.\n\nAnalysis Logic:\nCASE A: If Anomaly Count = 0\n\nTank: {{ $json.tank_id }}\n\nStatus: * If Level is \"Warning\": \"Near threshold. Reconstruction error {{ $json.reconstruction_error }} is close to threshold {{ $json.threshold }}. Preventive inspection recommended.\"\n\nOtherwise: \"Normal operation. Reconstruction error {{ $json.reconstruction_error }} is within safe threshold {{ $json.threshold }}.\"\n\n(No table required for Case A).\n\nCASE B: If Anomaly Count >= 1\n\nTank: {{ $json.tank_id }}\n\nSeverity: {{ $json.level }} | Count: {{ $json.anomaly_count }}\n\nAction: Immediate inspection required.\n\nRoot Cause Analysis (Select based on type):\n\nsensor_fault: \"Level reading dropped to 0. Sensor disconnected or power failure.\"\n\nimpossible_value: \"Level reading outside physical limits (0-30ft). Sensor malfunction or data corruption.\"\n\nsudden_spike: \"Abrupt level change detected. Possible pump surge, valve failure, or overflow.\"\n\nmodel_anomaly: \"Unusual level pattern detected by LSTM. Possible slow leak or gradual degradation.\"\n\ncritical_anomaly: \"Reconstruction error is extremely high ({{ ($json.reconstruction_error / $json.threshold).toFixed(1) }}x above threshold). Major operational deviation or serious leak.\"\n\nData Table (Show max 3 rows):\nInclude columns: Time | Level (ft) | MSE Error | Type | Root Cause\n\nMap sensor_fault -> Hardware/sensor failure\n\nMap impossible_value -> Sensor malfunction\n\nMap sudden_spike -> Sudden pressure/flow change\n\nMap model_anomaly -> Abnormal behavior pattern\n\nMap critical_anomaly -> Critical deviation"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.1,
+      "position": [
+        2448,
+        -432
+      ],
+      "id": "f9c2d1e8-7c50-4d7c-ba89-3e7c51ea79a3",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        2448,
+        -208
+      ],
+      "id": "30e3ae59-da64-49ad-b8eb-7c60a14347ba",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "DZe17ilL1QHGz20e",
+          "name": "Gulab"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  let intense = 0;\n  const tank = item.json;\n  if (tank.anomaly === 1) intense += 2;\n  if (tank.lowest_score < -0.1) intense += 2;\n\n  // 3. Check for specific dangerous types in the anomalies list\n  const hasImpossibleValue = tank.anomalies.some(a => a.type === 'impossible_value');\n  const hasSensorFault = tank.anomalies.some(a => a.type === 'sensor_fault');\n  const hasSuddenSpike = tank.anomalies.some(a => a.type === 'sudden_spike');\n\n  if (hasImpossibleValue) intense += 2; // Very high priority\n  if (hasSuddenSpike) intense += 1;     // Moderate priority\n  if (hasSensorFault) intense += 1;     // Equipment maintenance needed\n\n  // 4. Night-time weighting (Optional: based on your Python 'is_night' feature)\n  // We can check the first anomaly's timestamp to see if it happened at night\n  if (tank.anomalies.length > 0) {\n      const lastAnomalyHour = new Date(tank.anomalies[0].timestamp).getHours();\n      if (lastAnomalyHour >= 22 || lastAnomalyHour <= 5) {\n          intense += 1; // Higher priority if no one is on-site\n      }\n  }\n\n  // Define levels based on intensity\n  let level = \"Normal\";\n  if (intense >= 4) level = \"Critical\";\n  else if (intense >= 2) level = \"Warning\";\n\n  return {\n    json: {\n      ...item.json,\n      intense,\n      level\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1616,
+        -16
+      ],
+      "id": "36cf1457-4788-4173-b8f4-9550eeeaf3e3",
+      "name": "Code2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.Inputfield || $json.text || \"\";\nconst message = input.toString().toLowerCase();\n\n// Extract just the numbers from the input\nlet match = message.match(/\\d+/);\nlet formattedTank = null;\n\nif (match) {\n  // Always force two digits with a leading zero\n  const tankNum = match[0].padStart(2, '0');\n  formattedTank = `physical_${tankNum}`;\n}\n\nreturn {\n  requested_tank: formattedTank,\n  original_input: input\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        -320
+      ],
+      "id": "56460f1b-f2e8-4b68-b26a-665b2db3d0dc",
+      "name": "Code1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nstaticData.requested_tank = $json.requested_tank;\n\nreturn {\n  requested_tank: $json.requested_tank\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        -320
+      ],
+      "id": "4cd16968-4d5f-48bc-b6e8-43dbcaea314b",
+      "name": "Code3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nlet requestedTank = staticData.requested_tank;\n\n// 1. Check if tank is requested (Static Data or Code1)\nif (!requestedTank) {\n    try {\n        requestedTank = $('Code1').first()?.json?.requested_tank;\n    } catch (e) {\n        requestedTank = null;\n    }\n}\n\n// 2. Normalization Function\nconst normalize = (id) => {\n    if (!id) return \"\";\n    let str = String(id).toLowerCase().trim();\n    // physical_7 -> physical_07, but physical_07 remains physical_07\n    return str.replace(/physical_(\\d)$/, 'physical_0$1');\n};\n\n// 3. LOGIC CHECK\nif (requestedTank) {\n    // CASE: User has requested a specific tank\n    const targetId = normalize(requestedTank);\n    \n    const filteredItems = items.filter(item => {\n        if (!item.json.tank_id) return false;\n        return normalize(item.json.tank_id) === targetId;\n    });\n\n    // CRITICAL: Agar user ne tank manga hai, to sirf filtered items bhejo.\n    // Agar is branch mein tank nahi mila, to empty array jayega (jo ke sahi hai).\n    return filteredItems;\n\n} else {\n    // CASE: Schedule Trigger (No specific tank requested)\n    // Is surat mein saara data wese hi return kar do.\n    return items;\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        -16
+      ],
+      "id": "641f6f48-bc0b-4a36-8374-5d96f9307d89",
+      "name": "Code4"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('When Executed by Another Workflow').isExecuted}}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    },
+                    "id": "faa1a8c4-934a-4e9e-9e90-7bda878f2fae"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "={{ $json.output }}"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "de5e190d-f7e6-444b-95ed-e8d8a95264f8",
+                    "leftValue": "={{ $('Schedule Trigger').isExecuted }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "={{   [\"critical\",\"warning\", \"Normal\"].includes(     $json.level?.toLowerCase()   ) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1984,
+        -16
+      ],
+      "id": "cc976d50-5d33-43d7-8ba9-72fe48adcfa3",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.filter(item => !item.json.error);"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        0
+      ],
+      "id": "1b2cab95-1399-423d-9672-9d33046f64d1",
+      "name": "Code5"
+    },
+    {
+      "parameters": {
+        "tableId": "tank_table",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "tank_id",
+              "fieldValue": "={{ $json.tank_id }}"
+            },
+            {
+              "fieldId": "anomaly",
+              "fieldValue": "={{ $json.anomaly }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $json.status }}"
+            },
+            {
+              "fieldId": "threshold",
+              "fieldValue": "={{ $json.threshold }}"
+            },
+            {
+              "fieldId": "reconstruction_error",
+              "fieldValue": "={{ $json.reconstruction_error }}"
+            },
+            {
+              "fieldId": "anomaly_count",
+              "fieldValue": "={{ $json.anomaly_count }}"
+            },
+            {
+              "fieldId": "anomalies",
+              "fieldValue": "={{ $json.anomalies }}"
+            },
+            {
+              "fieldId": "intense",
+              "fieldValue": "={{ $json.intense }}"
+            },
+            {
+              "fieldId": "level",
+              "fieldValue": "={{ $json.level }}"
+            },
+            {
+              "fieldId": "created_at",
+              "fieldValue": "={{ $now }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2448,
+        0
+      ],
+      "id": "e138af15-89d4-474b-baf0-33f86c7f618c",
+      "name": "Create a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "0HNAnMARSMxJMsgk",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "21c71686-503f-4996-90fc-f78a35fbe404",
+              "leftValue": "={{ $json.tank_id }}",
+              "rightValue": "=physical_01",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "2d35aff3-f896-44e1-9220-391957c8fca8",
+              "leftValue": "={{ $json.tank_id }}",
+              "rightValue": "physical_02",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "e9526aca-7637-4838-b681-5e50d0bcfc18",
+              "leftValue": "={{ $json.tank_id }}",
+              "rightValue": "physical_03",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "dbfe5338-f759-4a99-842a-07204c28c7ee",
+              "leftValue": "={{ $json.tank_id }}",
+              "rightValue": "physical_04",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "98777a74-b48c-454f-9904-3c168a230a2d",
+              "leftValue": "={{ $json.tank_id }}",
+              "rightValue": "physical_05",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "0982d75b-58de-43f9-92c2-12d5830de0e2",
+              "leftValue": "={{ $json.tank_id }}",
+              "rightValue": "physical_06",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        208,
+        -16
+      ],
+      "id": "4278e6d8-eb4e-4734-b453-57dc2ad88485",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        624,
+        176
+      ],
+      "id": "9a6c3fe3-103b-4260-a493-990a2770d5c5",
+      "name": "Aggregate1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://zaheer140-tank-lstm.hf.space/predict",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.data }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        912,
+        -160
+      ],
+      "id": "839ca98d-2be1-461e-97ef-71bdc6acc743",
+      "name": "LSTM 1 to 6"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://zaheer140-tank-lstm-7-13.hf.space/predict",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.data }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        912,
+        176
+      ],
+      "id": "e0ba5731-a5ff-4c63-828e-e562af88f6f1",
+      "name": "LSTM 7 to 13"
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "Inputfield"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -880,
+        -320
+      ],
+      "id": "c2dfde77-0971-46fc-882e-d11eb6c58c3c",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1328,
+        -16
+      ],
+      "id": "b97e56dc-949b-49cb-915d-0dbee0c6dd24",
+      "name": "Merge"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "LSTM 1 to 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code2": {
+      "main": [
+        [
+          {
+            "node": "Code4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code1": {
+      "main": [
+        [
+          {
+            "node": "Code3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code3": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code4": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code5": {
+      "main": [
+        [
+          {
+            "node": "Create a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aggregate1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate1": {
+      "main": [
+        [
+          {
+            "node": "LSTM 7 to 13",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LSTM 1 to 6": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LSTM 7 to 13": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        []
+      ]
+    },
+    "Create a row": {
+      "main": [
+        []
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Code1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Karachi",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "67df0ea1-3845-41fc-8749-819ceab88802",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "be5762764fe9ca64d28e86cddd35989a244c295bd0ccfa30f172afc633c3f0e5"
+  },
+  "id": "1T1PgT7owcxZjybm",
+  "tags": []
+}

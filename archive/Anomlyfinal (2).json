@@ -1,0 +1,544 @@
+{
+  "name": "Anomlyfinal",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => ({\n  json: {\n    coldroom_name: (item.json.coldroom_name || \"Unknown\")\n      .toString()\n      .replace(/\\s+/g, \"\")\n      .toLowerCase(),\n    temperature: Number(item.json.temperature),\n    humidity: Number(item.json.humidity),\n    sensor_timestamp: item.json.sensor_timestamp\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1424,
+        96
+      ],
+      "id": "fce6c50a-503d-4df3-b32b-4a38b7bc0e40",
+      "name": "Code8"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://zaheer140-newanomly.hf.space/predict",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $items().map(item => item.json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1664,
+        96
+      ],
+      "id": "7e156605-28cf-4ea1-beca-4a53c4b8ad57",
+      "name": "HTTP Request2",
+      "executeOnce": true,
+      "alwaysOutputData": false,
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n    a.name AS coldroom_name,\n    (d.value->>'Temperature')::float AS temperature,\n    (d.value->>'Humidity')::float AS humidity,\n    (d.value->>'Timestamp')::timestamp AS sensor_timestamp,\n    d.timestamp AS db_timestamp\nFROM asset_datapoint d\nJOIN asset a ON d.entity_id = a.id\nWHERE d.entity_id IN (\n    '1zT8DEEVLGvl8nUxaLL0W8',\n    '5uhvZaKF94qAupKL1H8Vm1',\n    '5rsuXBEAO4FRILtQKEPUNV',\n    '4wpAc9iS6UsEiX6oJuvpDC',\n    '4SA19NMdneRLOc0p9UUXfT',\n    '5yeZ8X3xlpurMQ53WA9MOV',\n    '7VQugAzZEx3Rdj1Dm07ofQ',\n    '3IC18zO8okOcVDWcQ3UAjj',\n    '2K03aJIUXF62nR5lZ73N2J',\n  '4AGgJSPtDhEvAwZBFDO977',\n  '4XqB7d4bMAmvXFhbj03UGd'\n)\nAND d.timestamp >= NOW() - INTERVAL '3 hours'\nAND d.attribute_name = 'data'\nORDER BY a.name, d.timestamp DESC",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1184,
+        96
+      ],
+      "id": "26b8d93a-5773-495f-a571-2b219c125880",
+      "name": "Execute a SQL query3",
+      "credentials": {
+        "postgres": {
+          "id": "34JsQfkTIP9MRhuo",
+          "name": "Postgres account Openremote"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n\n  let intense = 0;\n  if (item.json.anomaly == 1) intense += 2;\n  if (item.json.isNight && item.json.anomaly == 1) intense += 1;\n  if (item.json.isWeekend && item.json.anomaly == 1) intense += 1;\n  if (!item.json.isPeak && item.json.temperature > 35) intense += 2;\n\n  if (item.json.reconstruction_error > item.json.threshold * 0.8)\n    intense += 2;\n\n  let level = \"Normal\";\n\n  if (intense >= 4) level = \"Critical\";\n  else if (intense >= 2) level = \"Warning\";\n\n\n  return {\n    json: {\n      ...item.json,\n      intense,\n      level,\n      \n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1888,
+        96
+      ],
+      "id": "f97f6583-30f2-4da7-a920-7067733fe5bf",
+      "name": "Code9",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const input = $json.Inputfield || $json.text || $json.output || \"\";\n\nconst message = input\n  .toString()\n  .toLowerCase()\n  .replace(/[^\\w\\s-]/g, '')\n  .trim();\n\nlet roomMatch = message.match(/cold\\s*-?\\s*room\\s*(\\d+)/);\n\nreturn {\n  requested_room: roomMatch ? `coldroom${roomMatch[1]}` : null,\n  original_input: input // Good for debugging!\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        96
+      ],
+      "id": "b0f11b32-3cd5-4e4a-ab61-fbef8e004e41",
+      "name": "Code10"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Coldroom: {{$json.coldroom_name}}\nAnomaly: {{ $json.anomaly }}\nAnomaly_Count: {{$json.anomaly_count}}\nReconstruction Error: {{$json.reconstruction_error}}\nThreshold: {{$json.threshold}}\nSeverity Level: {{$json.level}}\nAnomaly_list: {{ $json.anomalies }}\n\nExplain current condition and whether action is required.",
+        "options": {
+          "systemMessage": "=## Role\nYou are a Coldroom Monitoring Assistant. Analyze the coldroom data provided below and follow your System Message instructions to generate the report.\n\nDATA:\n{{ JSON.stringify($json) }}\nYou will recieve\nColdroom\nAnomaly\nAnomaly_Count\nReconstruction Error\nThreshold\nSeverity Level\nanomalies (array with timestamp, temperature, humidity)\n\n## Strict Data Rules:\n1. Use ONLY the 'coldroom_name', 'level', 'anomaly_count', and 'anomalies' array provided in the user's input.\n2. Do NOT invent or estimate timestamps.\n3. If the 'anomalies' array contains 7 items (as seen in anomaly_count), your table MUST have exactly 7 rows matching those specific timestamps, temperatures, and humidities.\n4. If both temperature and humidity is 0 then don't show any table.\n5. if no coldroom name found return one line response.\n6. if there is any {{ $json.error }} in input show as it is by analyzing remaining fields.\n\n## Analysis Logic\n1. Check the 'Anomaly' field.\n2. If Anomaly is 0:\n   - **Room Name** (Bold)\n   - If Severity Level is \"Warning\": State \"The system is near abnormal threshold. Preventive inspection is recommended.\"\n   - Otherwise: State \"System is operating normally. Reconstruction Error {{ $json.reconstruction_error }} is below Threshold {{ $json.threshold }}. No action required.\"\n   - **Rule:** Do NOT create a table. Keep it short.\n\n3. If Anomaly is 1:\n   - **Room Name** (Bold)\n   - Mention Severity Level: {{ $json.level }}\n   - Mention Anomaly Count: {{ $json.anomaly_count }}\n   - State: \"Immediate action required.\"\n   - Likely Cause: [Provide a one-line explanation based on temp/hum trends]\n   \n## Mandatory Table (Anomaly = 1)\n| Time | Temperature | Humidity |\n| :--- | :--- | :--- |\n[Iterate through the 'anomalies' array provided in the JSON input]"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.1,
+      "position": [
+        2832,
+        -256
+      ],
+      "id": "9e3e2495-2913-4ae1-a3a5-b92a2bcea059",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nstaticData.requested_room = $json.requested_room;\n\nreturn {\n  requested_room: $json.requested_room\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        976,
+        96
+      ],
+      "id": "29c58d07-fd9f-4e38-990e-d3d3479c51ce",
+      "name": "Code11"
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst requestedRoom = staticData.requested_room;\nif (!requestedRoom) return items;\n\nstaticData.requested_room = null;\n\nreturn items.filter(item =>\n  item.json.coldroom_name === requestedRoom\n);"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2096,
+        96
+      ],
+      "id": "47b248b2-55d6-44a2-a319-df764f663609",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "Inputfield"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        528,
+        96
+      ],
+      "id": "d8f24926-a5c7-4fe6-bb33-37f1c19bb05b",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-20b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        2832,
+        -64
+      ],
+      "id": "93e28a06-3ead-46d6-9b86-9f90f8cd01d8",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "DZe17ilL1QHGz20e",
+          "name": "Gulab"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        976,
+        368
+      ],
+      "id": "b5a24387-d994-4aaf-8e3e-248cc0142a58",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "sendTo": "zaheerukuk581@gmail.com",
+        "subject": "Coldroom Monitoring Alert Report",
+        "message": "=<p>Dear Team,</p>\n\n<p>Please find attached the consolidated Coldroom Monitoring Alert Report.</p>\n\n<p>Immediate attention is required for critical alerts.</p>\n\n<p>Regards,<br>\nColdroom Monitoring System</p>\n{{ $json.html }}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2864,
+        -480
+      ],
+      "id": "228789ba-ee2d-40dd-bae2-4cc70f58067f",
+      "name": "Send a message",
+      "webhookId": "a6f730fe-1968-4077-9963-a51dcd1f6f01",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "QpoVvpzHWRvsr26d",
+          "name": "Gmail account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date().toLocaleString();\n\nconst alertsHtml = items.map(item => {\n  let output = item.json.output || '';\n\n  // 1. HEADER DATA EXTRACTION\n  const roomMatch = output.match(/\\*\\*?(coldroom\\d+)\\*\\*?/i);\n  const roomName = roomMatch ? roomMatch[1].toUpperCase() : 'COLDROOM';\n\n  let severity = 'Normal'; \n  if (output.toLowerCase().includes('critical')) severity = 'Critical';\n  else if (output.toLowerCase().includes('warning') || output.toLowerCase().includes('preventive')) severity = 'Warning';\n\n  // 2. TABLE EXTRACTION & TEXT CLEANING\n  const lines = output.split('\\n');\n  let tableLines = [];\n  let textLines = [];\n\n  // Har line ko check karein: Agar pipe '|' hai toh table ka hissa hai\n  lines.forEach(line => {\n    if (line.trim().startsWith('|') || (line.trim().includes('|') && line.trim().length > 5)) {\n      tableLines.push(line);\n    } else {\n      // Room name aur Severity ko body text se nikalne ke liye\n      if (!line.toLowerCase().includes('coldroom') && !line.toLowerCase().includes('severity level')) {\n        textLines.push(line);\n      }\n    }\n  });\n\n  let tableHtml = '';\n  if (tableLines.length > 0) {\n    // Markdown separator (---) ko filter out karein\n    const filteredRows = tableLines.filter(l => !l.includes('---') && !l.includes(':---'));\n    \n    if (filteredRows.length > 0) {\n      const headerLine = filteredRows.shift();\n      const headers = headerLine.split('|').filter(c => c.trim()).map(c => \n        `<th style=\"padding:12px; background:#F1F5F9; border-bottom:2px solid #CBD5E1; text-align:left; font-size:11px; color:#475569; text-transform:uppercase;\">${c.trim()}</th>`\n      ).join('');\n\n      const rows = filteredRows.map((line, index) => {\n        const cells = line.split('|').filter(c => c.trim()).map(c => \n          `<td style=\"padding:10px; border-bottom:1px solid #E2E8F0; font-family:monospace; font-size:12px; color:#64748B;\">${c.trim()}</td>`\n        ).join('');\n        const rowBg = index % 2 === 0 ? '#ffffff' : '#F8FAFC';\n        return `<tr style=\"background:${rowBg};\">${cells}</tr>`;\n      }).join('');\n\n      tableHtml = `\n        <div style=\"margin-top:20px; border:1px solid #E2E8F0; border-radius:10px; overflow:hidden;\">\n          <table style=\"width:100%; border-collapse:collapse; background:white;\">\n            <thead><tr>${headers}</tr></thead>\n            <tbody>${rows}</tbody>\n          </table>\n        </div>`;\n    }\n  }\n\n  // 3. CLEAN BODY TEXT\n  const cleanBody = textLines.join('<br>').replace(/(<br>){2,}/g, '<br><br>').trim();\n\n  // 4. THEME CONFIG\n  const styles = {\n    Critical: { border: '#EF4444', bg: '#FEE2E2', text: '#991B1B', icon: '🚨' },\n    Warning:  { border: '#F59E0B', bg: '#FEF3C7', text: '#92400E', icon: '⚠️' },\n    Normal:   { border: '#10B981', bg: '#D1FAE5', text: '#065F46', icon: '✅' }\n  };\n  const theme = styles[severity] || styles.Normal;\n\n  return `\n    <div style=\"margin-bottom:30px; background:#ffffff; border-radius:12px; border-left:8px solid ${theme.border}; box-shadow:0 4px 6px rgba(0,0,0,0.05); overflow:hidden; border:1px solid #E2E8F0; border-left:8px solid ${theme.border};\">\n        <div style=\"padding:12px 20px; background:#F8FAFC; border-bottom:1px solid #E2E8F0;\">\n            <table width=\"100%\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\">\n              <tr>\n                <td style=\"font-weight:bold; color:#1E293B; font-size:16px;\">${theme.icon} ${roomName}</td>\n                <td align=\"right\">\n                  <span style=\"padding:4px 12px; border-radius:15px; font-size:10px; font-weight:bold; background:${theme.bg}; color:${theme.text}; text-transform:uppercase;\">\n                    ${severity}\n                  </span>\n                </td>\n              </tr>\n            </table>\n        </div>\n        <div style=\"padding:20px; font-size:14px; color:#334155; line-height:1.6;\">\n            ${cleanBody}\n            ${tableHtml}\n        </div>\n    </div>\n  `;\n}).join('');\n\nconst fullHtml = `\n<!DOCTYPE html>\n<html>\n<body style=\"background:#F1F5F9; padding:20px; font-family:Helvetica, Arial, sans-serif;\">\n  <div style=\"max-width:650px; margin:0 auto;\">\n    <div style=\"background:#1E40AF; color:#ffffff; padding:30px; border-radius:15px; text-align:center; margin-bottom:25px;\">\n      <h2 style=\"margin:0; font-size:24px;\">Coldroom Analysis Report</h2>\n      <div style=\"font-size:12px; opacity:0.8; margin-top:8px;\">${now}</div>\n    </div>\n    ${alertsHtml}\n  </div>\n</body>\n</html>\n`;\n\nreturn [{ json: { html: fullHtml } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2608,
+        -480
+      ],
+      "id": "b32461c4-f1f1-4114-88a0-a9b38d253ff7",
+      "name": "Code1"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "2b3c24c6-31f2-40e5-b717-ec565c047558",
+                    "leftValue": "={{ $('When Executed by Another Workflow').isExecuted}}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "={{ $json.output }}"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "82818c41-af21-4159-8aed-5e57010dc797",
+                    "leftValue": "={{ $('Schedule Trigger').isExecuted }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "={{   [\"critical\",\"warning\", \"Normal\"].includes(     $json.level?.toLowerCase()   ) }}"
+            }
+          ]
+        },
+        "options": {
+          "allMatchingOutputs": true
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2400,
+        96
+      ],
+      "id": "01d7182b-aeea-478e-b3db-dbb363675cbc",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "useCustomSchema": true,
+        "tableId": "Anomaly",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "coldroom_name",
+              "fieldValue": "={{ $json.coldroom_name }}"
+            },
+            {
+              "fieldId": "anomaly",
+              "fieldValue": "={{ $json.anomaly }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $json.status }}"
+            },
+            {
+              "fieldId": "threshold",
+              "fieldValue": "={{ $json.threshold }}"
+            },
+            {
+              "fieldId": "reconstruction_error",
+              "fieldValue": "={{ $json.reconstruction_error }}"
+            },
+            {
+              "fieldId": "anomaly_count",
+              "fieldValue": "={{ $json.anomaly_count }}"
+            },
+            {
+              "fieldId": "anomalies",
+              "fieldValue": "={{ $json.anomalies }}"
+            },
+            {
+              "fieldId": "intense",
+              "fieldValue": "={{ $json.intense }}"
+            },
+            {
+              "fieldId": "level",
+              "fieldValue": "={{ $json.level }}"
+            },
+            {
+              "fieldId": "created_at",
+              "fieldValue": "={{ $now }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3168,
+        112
+      ],
+      "id": "4775fc28-00b3-4069-b627-8668c33d5a2c",
+      "name": "Create a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "0HNAnMARSMxJMsgk",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.filter(item => !item.json.error);"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2784,
+        112
+      ],
+      "id": "c69decbf-2e6d-4d07-b264-23a68b27d64f",
+      "name": "Code2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Code8": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Code9",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query3": {
+      "main": [
+        [
+          {
+            "node": "Code8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code9": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code10": {
+      "main": [
+        [
+          {
+            "node": "Code11",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code11": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        []
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Code10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code1": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code2": {
+      "main": [
+        [
+          {
+            "node": "Create a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Karachi",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "378902f8-81b6-45a8-8c92-412c060404b6",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "be5762764fe9ca64d28e86cddd35989a244c295bd0ccfa30f172afc633c3f0e5"
+  },
+  "id": "jX1Clgq8uvUSb5eG",
+  "tags": []
+}

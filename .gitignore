@@ -1,0 +1,35 @@
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python caching
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment Variables (SENSITIVE)
+.env
+.env.*
+
+# Large Data & Models
+**/data/**/*.csv
+**/models/**/*.h5
+**/models/**/*.pkl
+**/models/**/*.joblib
+!**/data/reports/*.csv
+
+# logs
+*.log
+**/data/reports/*.csv
+
+# Node (Frontend)
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
