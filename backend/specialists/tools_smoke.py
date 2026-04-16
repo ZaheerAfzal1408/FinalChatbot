@@ -43,11 +43,12 @@ def train_smoke_model(df, model_dir, scaler_path, model_path, config_path):
     if len(train_df) < SMOKE_TIME_STEPS * 2:
         train_df = df # Fallback to all data if filter is too strict
         
+    threshold = 0.05
     scaler = MinMaxScaler()
     features = ['temp', 'humi', 'bat_voltage', 'bat_percent']
     scaler.fit(train_df[features].fillna(0))
     joblib.dump(scaler, scaler_path)
-    joblib.dump({'threshold': 0.05, 'features': features}, config_path)
+    joblib.dump({'threshold': threshold, 'features': features}, config_path)
     
     # LSTM Autoencoder Architecture
     inputs = Input(shape=(SMOKE_TIME_STEPS, 4))
