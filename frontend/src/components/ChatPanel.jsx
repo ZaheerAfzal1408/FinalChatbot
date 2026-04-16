@@ -9,20 +9,29 @@ const API_BASE = 'http://localhost:8000';
 const ResultCards = ({ data }) => (
     <div className="result-cards">
         {data.map((item, idx) => {
-            const isAnomaly = item.anomaly === 1;
+            const status = item.status || (item.anomaly === 1 ? 'Critical' : 'Normal');
+            let pillClass = 'pill-green';
+            let Icon = CheckCircle2;
+
+            if (status === 'Critical') { pillClass = 'pill-red'; Icon = AlertTriangle; }
+            else if (status === 'Warning') { pillClass = 'pill-yellow'; Icon = Info; }
+            else if (status === 'No Data') { pillClass = 'pill-white'; Icon = Wifi; }
+
             return (
-                <div key={idx} className={`result-card ${isAnomaly ? 'anomaly' : 'normal'}`}>
+                <div key={idx} className={`result-card status-${status.toLowerCase().replace(' ', '')}`}>
                     <div className="rc-head">
-                        <span className="rc-name">{item.asset || 'Industrial Asset'}</span>
-                        <span className={`rc-pill ${isAnomaly ? 'pill-red' : 'pill-green'}`}>
-                            {isAnomaly ? <AlertTriangle size={10} /> : <CheckCircle2 size={10} />}
-                            {isAnomaly ? 'Anomaly Detected' : 'Nominal Status'}
+                        <span className="rc-name">{item.name || item.asset || 'Industrial Asset'}</span>
+                        <span className={`rc-pill ${pillClass}`}>
+                            <Icon size={10} />
+                            {status}
                         </span>
                     </div>
-                    <div className="rc-metrics">
-                        <span>MSE: <strong>{item.mse?.toFixed(5) || '0.00000'}</strong></span>
-                        <span>Threshold: <strong>{item.threshold?.toFixed(5) || '0.00000'}</strong></span>
-                    </div>
+                    {status !== 'No Data' && (
+                        <div className="rc-metrics">
+                            <span>MSE: <strong>{item.latest_mse?.toFixed(5) || item.mse?.toFixed(5) || '0.00000'}</strong></span>
+                            <span>Threshold: <strong>{item.threshold?.toFixed(5) || '0.00000'}</strong></span>
+                        </div>
+                    )}
                 </div>
             );
         })}

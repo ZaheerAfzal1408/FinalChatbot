@@ -46,10 +46,17 @@ const Sidebar = () => {
 
                 <div className="node-card">
                     <div className="nc-head">
-                        <span className="nc-name"><Droplets size={14} /> Refinery</span>
+                        <span className="nc-name"><Droplets size={14} /> Refinery Tanks</span>
                         <span className="pill pill-active">12 Active</span>
                     </div>
-                    <p className="nc-sub">Tanks T1–T13 &nbsp;·&nbsp; <span className="text-warn">T10 unavailable</span></p>
+                    <p className="nc-sub">Tanks T1–T13 &nbsp;·&nbsp; <span className="text-nodata">T10 offline</span></p>
+                </div>
+
+                <div className="node-card">
+                    <div className="nc-head">
+                        <span className="nc-name"><Shield size={14} /> Smoke Alarms</span>
+                        <span className="pill pill-active">5 Zones Active</span>
+                    </div>
                 </div>
             </div>
         </aside>
