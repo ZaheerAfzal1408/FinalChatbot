@@ -58,3 +58,35 @@ def evaluate_tank_status(anomaly_detected, anomalies, is_night):
         level = "Warning"
         
     return intense, level
+
+def evaluate_smoke_status(incident_detected, warn_string, temp, humi, bat_v, mse, threshold):
+    """
+    Implements the intensity math for Smoke Alarms.
+    Factors: AI Deviations, Hardware Warnings, and Environmental Spikes.
+    """
+    intense = 0
+    
+    # 1. AI Deviation Logic
+    if incident_detected:
+        intense += 2
+    elif mse > (threshold * 0.8):
+        intense += 1 # Pre-incident warning
+        
+    # 2. Hardware Warnings (String-based)
+    if warn_string in ['warn', 'fault', 'remove']:
+        intense += 3
+    elif warn_string == 'low-vol' or bat_v < 2.8:
+        intense += 1
+        
+    # 3. Environmental Spikes
+    if temp > 35:
+        intense += 2
+        
+    # Mapping to Level
+    level = "Normal"
+    if intense >= 4:
+        level = "Critical"
+    elif intense >= 2:
+        level = "Warning"
+        
+    return intense, level

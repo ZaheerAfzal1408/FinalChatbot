@@ -10,11 +10,18 @@ from database.tank_db import fetch_tank_data
 from train.coldroom.train_coldroom import train_coldroom
 from train.tanks_1_6.train_tanks_1_6 import train_tank_1_6
 from train.tanks_7_13.train_tanks_7_13 import train_tank_7_13
-from status_evaluator import evaluate_coldroom_status, evaluate_tank_status
+from core.status_evaluator import (
+    evaluate_coldroom_status, 
+    evaluate_tank_status,
+    evaluate_smoke_status
+)
+from specialists.tools_smoke import analyze_smoke_incident, scan_all_smoke_alarms
+import core.asset_mapping as am
 import re
 import schedule
 import time
 import threading
+from core.shared_utils import slugify, engineer_coldroom_features, engineer_tank_features
 
 # --- Paths ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -41,8 +48,6 @@ def ensure_dir(path):
     if not os.path.exists(path):
         os.makedirs(path, exist_ok=True)
 
-def slugify(text):
-    return re.sub(r'[^a-zA-Z0-9]', '', text).lower()
 
 def is_peak_hour(dt):
     # Peak Hours: 10:00 to 18:00
@@ -77,8 +82,9 @@ def process_coldrooms(df):
         
         # Load Artifacts back for prediction
         model = load_model(os.path.join(model_dir, 'model.h5'), compile=False)
-        scaler = joblib.load(os.path.join(model_dir, 'scaler.joblib'))
+        scaler = joblib.load(os.path.join(model_dir, 'scalar.pkl'))
         threshold = stats['threshold']
+
         
         # 2. Prediction on full dataset (Predict)
         group = group.sort_values('sensor_timestamp').copy()
@@ -96,11 +102,8 @@ def process_coldrooms(df):
             continue
             
         # Feature Engineering (Matching User Snippet)
-        group["temp_diff"] = group["temperature"].diff()
-        group["hum_diff"] = group["humidity"].diff()
-        group["rolling_mean"] = group["temperature"].rolling(12).mean()
-        group["rolling_std"] = group["temperature"].rolling(12).std()
-        group = group.fillna(0)
+        # Feature Engineering (Shared Logic)
+        group = engineer_coldroom_features(group)
         
         features = ["temperature", "humidity", "temp_diff", "rolling_mean", "rolling_std"]
         X_scaled = scaler.transform(group[features].values)
@@ -232,10 +235,11 @@ def process_tanks(df):
         
         # Load Artifacts
         model = load_model(os.path.join(model_dir, 'model.h5'), compile=False)
-        scaler = joblib.load(os.path.join(model_dir, 'scaler.joblib'))
-        config = joblib.load(os.path.join(model_dir, 'config.joblib'))
+        scaler = joblib.load(os.path.join(model_dir, 'scalar.pkl'))
+        config = joblib.load(os.path.join(model_dir, 'config.pkl'))
         
         threshold = config["threshold"]
+
         features_list = config["features"]
         max_ft = TANK_MAX_LEVELS.get(tank_id.lower().replace(' ', '_'), MAX_FT_DEFAULT)
         
@@ -258,28 +262,8 @@ def process_tanks(df):
             })
             continue
             
-        # Feature Engineering (Exactly matching training notebook)
-        group["headspace"] = max_ft - group["level_feet"]
-        group["fill_pct"] = (group["level_feet"] / max_ft) * 100
-        group["roc"] = group["level_feet"].diff()
-        group["roc_abs"] = group["roc"].abs()
-        group["accel"] = group["roc"].diff()
-        group["roll_mean"] = group["level_feet"].rolling(60, min_periods=1).mean()
-        group["roll_std"] = group["level_feet"].rolling(60, min_periods=1).std().fillna(0)
-        group["roll_range"] = (
-            group["level_feet"].rolling(60, min_periods=1).max() - 
-            group["level_feet"].rolling(60, min_periods=1).min()
-        )
-        group["dev_from_mean"] = group["level_feet"] - group["roll_mean"]
-        
-        mu = group["level_feet"].mean()
-        sig = group["level_feet"].std() + 1e-9
-        group["z_score"] = (group["level_feet"] - mu) / sig
-        
-        group["hour"] = group["sensor_timestamp"].dt.hour
-        group["minute"] = group["sensor_timestamp"].dt.minute
-        group["day_of_week"] = group["sensor_timestamp"].dt.dayofweek
-        group["is_night"] = ((group["hour"] >= 22) | (group["hour"] <= 5)).astype(int)
+        # Feature Engineering (Shared Logic)
+        group = engineer_tank_features(group, max_ft)
         
         group = group.fillna(0)
         
@@ -385,6 +369,11 @@ def process_tanks(df):
         })
     return results
 
+def process_smoke_alarms():
+    """ Runs hierarchical smoke detection for the whole facility. """
+    logger.info("Processing Smoke Alarms (Safety Scan)...")
+    return scan_all_smoke_alarms()
+
 def save_pipeline_results(cr_results, tank_results):
     """
     Saves the results of the pipeline to CSV files in the reports directory.
@@ -441,9 +430,10 @@ def main():
     # TRAIN & PREDICT
     cr_results = process_coldrooms(cr_data)
     tank_results = process_tanks(tank_data)
+    smoke_results = process_smoke_alarms()
     
-    # SHOW RESULT
-    print("\n" + "="*60)
+    # Consolidation for Logging
+    print("\n--- Industrial Summary ---")
     print(" ANOMALY DETECTION PIPELINE SUMMARY REPORT ")
     print("="*60)
     
@@ -468,7 +458,7 @@ def main():
 
 def run_scheduler():
     """Background loop for the 3-hour automation."""
-    logger.info("Scheduler initialized: Running every 3 hours.")
+    logger.info("Scheduler initialized: Running every monday at 1:00 AM.")
     while True:
         schedule.run_pending()
         time.sleep(10) # Check every 10 seconds
@@ -477,8 +467,9 @@ if __name__ == "__main__":
     # 1. Run once immediately on startup
     main()
     
-    # 2. Schedule for every 3 hours
-    schedule.every(3).hours.do(main)
+    # 2. Schedule for every Week (Monday at 1:00 AM)
+    schedule.every().monday.at("01:00").do(main)
+
     
     # 3. Start scheduler in background thread
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)

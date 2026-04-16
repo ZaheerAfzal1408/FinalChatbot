@@ -1,95 +1,85 @@
-# The Foreman: Hierarchical Multi-Agent Industrial Monitoring System
+# 🏗️ THE FOREMAN: Unified Industrial AI
 
-**The Foreman** is a high-fidelity industrial anomaly detection platform designed for refinery tanks and coldroom management. It utilizes a hierarchical multi-agent architecture to bridge the gap between raw sensor data and human-readable industrial diagnostics.
-
----
-
-## 🚀 Key Features
-
-*   **Autonomous Oversight**: A background pipeline that fetches data, trains models, and predicts anomalies every 3 hours.
-*   **Deep-Learning Engine**: Uses **LSTM Autoencoders** to detect subtle behavioral shifts (not just simple spikes).
-*   **Hierarchical Agents**: Managed by **LangGraph**, the system coordinates between specialized agents for different asset types.
-*   **Instant Diagnostics**: Real-time chat interface that provides root-cause explanations and technical insights (MSE, Threshold, ROC).
-*   **Batch Inference**: Analyzes entire windows of data to identify historical trends and persistent leaks.
+**The Foreman** is a high-performance, consolidated industrial monitoring system. It leverages **LSTM Autoencoders** and a **Multi-Agent AI reasoning chain** to provide 360-degree protection for Oil Refineries, Cold Chain Logistics, and Fire Safety Networks.
 
 ---
 
-## 🛠 Technology Stack
+## 🌟 Key Capabilities
 
-### Backend & AI
-- **FastAPI**: High-performance API orchestration.
-- **LangGraph & LangChain**: Multi-agent framework for intelligent task routing.
-- **TensorFlow/Keras**: Deep learning for time-series anomaly detection.
-- **PostgreSQL**: Primary data store for IoT sensor telemetry.
-- **Scikit-Learn & Joblib**: Data scaling and artifact management.
+### 🛡️ 1. Refinery Tank Monitoring
+- **Real-time Level Tracking**: Analyzes oil levels in Physical01–13.
+- **Drift Detection**: Identifies "Impossible Values", "Sudden Spikes", and "Sensor Faults".
+- **Dynamic Baselines**: Automatically adjusts thresholds for different oil types or equipment upgrades.
 
-### Frontend
-- **React 18**: Dynamic, glassmorphic UI.
-- **Vite**: Ultra-fast build tool.
-- **Framer Motion**: Smooth micro-animations for a premium feel.
-- **Vanilla CSS**: Bespoke styling for maximum performance.
+### ❄️ 2. ColdRoom Environment Guard
+- **Temp/Humi Stability**: Monitors thermal gradients to prevent product spoilage.
+- **Night/Weekend Sensitivity**: Adjusts alert intensity based on facility hours and peak loads.
+
+### ⚠️ 3. Hierarchical Smoke & Fire Detection
+- **Network Scanning**: Scans Zones, Rooms, and individual sensor nodes.
+- **Multi-Factor Logic**: Combines AI reconstruction errors with hardware warning strings (`mute`, `fault`, `low-vol`) for precise incident reporting.
+
+---
+
+## 🧠 Brain Architecture: The AI Multi-Agent System
+
+The system uses **LangGraph** to orchestrate a specialist team of AI agents:
+
+1. **The Supervisor (Foreman)**: The entry point. It detects user intent and routes queries to the correct domain expert (Tank, ColdRoom, or Smoke).
+2. **Domain Experts**: Specialist nodes that execute heavy LSTM inference in the background.
+3. **The Investigator (Root Cause)**: Analyzes the raw sensor anomalies to find underlying facility patterns.
+4. **The Advisor (Safety)**: Provides actionable, industrial-grade recommendations based on detected incidents.
+
+---
+
+## 🚀 Getting Started
+
+### Backend Setup (Python)
+The backend is a unified **FastAPI** service.
+
+1. **Install Dependencies**:
+   ```bash
+   pip install tensorflow pandas numpy scikit-learn langchain-groq langgraph fastapi uvicorn python-dotenv
+   ```
+2. **Environment Configuration**: Create a `.env` file:
+   ```env
+   GROQ_API_KEY=your_key_here
+   POSTGRES_URI=your_db_uri
+   ```
+3. **Launch the Service**:
+   ```bash
+   cd backend
+   python api_chat.py  # Starts the Multi-Agent Chatbot
+   python app.py       # Starts the Automated Weekly Pipeline
+   ```
+
+### Frontend Setup (React)
+The frontend provides a real-time "Command Center" view.
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
 ---
 
 ## 📂 Project Structure
 
-```text
-├── backend/            # Primary ML Pipeline & Data Hub
-│   ├── data/           # Raw sensor telemetry (CSV/DB)
-│   ├── models/         # Persistent LSTM models & Scalers
-│   ├── database/       # DB connection & fetch utilities
-│   └── app.py          # The Autonomous Overseer (Scheduler)
-├── chatbot/            # Multi-Agent API
-│   ├── api.py          # FastAPI server for the chatbot
-│   └── tools_industrial.py # Logic Bridge between Chat and Backend
-└── frontend/           # React Application
-    └── src/components/ # Bespoke UI components (Chat, Sidebar, etc.)
-```
+- **`backend/core/`**: Shared asset mapping, feature engineering, and status scoring.
+- **`backend/specialists/`**: LSTM diagnostic tools for industrial and safety domains.
+- **`backend/database/`**: Optimized fetchers for OpenRemote PostgreSQL telemetry.
+- **`backend/models/`**: Versioned LSTM Autoencoders (`.h5` and `.pkl` artifacts).
 
 ---
 
-## 🏁 Getting Started
+## 🔧 Maintenance Commands
 
-### 1. Prerequisites
-Ensure you have Python 3.9+ and Node.js installed.
-
-### 2. Environment Setup
-Create a `.env` file in the `backend/` and `chatbot/` directories:
-```env
-POSTGRES_URI=your_database_connection_string
-GROQ_API_KEY=your_groq_api_key
-```
-
-### 3. Installation
-**Backend/Chatbot:**
-```bash
-cd chatbot
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-**Frontend:**
-```bash
-cd frontend
-npm install
-```
-
-### 4. Running the System
-You need to run three components simultaneously:
-1. **Background Pipeline**: `python backend/app.py`
-2. **Chatbot API**: `python chatbot/api.py`
-3. **Frontend Dashboard**: `npm run dev`
+- **Force System Realignment**: Use this to reset all AI baselines immediately if operations change.
+  ```bash
+  python realign_system.py
+  ```
 
 ---
 
-## 🧠 Core Logic: LSTM Autoencoder
-The system uses an **Autoencoder** architecture which:
-1.  **Encodes** a window of "Normal" behavior into a compressed representation.
-2.  **Decodes** it back into original sensor values.
-3.  **Calculates Error (MSE)**: If the error between the input and reconstructed output is higher than a dynamically calculated **Threshold**, an anomaly is triggered.
-
----
-
-## 📜 License
-Internal Industrial Use Only. Designed by **The Foreman Team**.
+Developed for **Enterprise Industrial Safety**.
+"The Foreman: Always Watching, Always Learning."
