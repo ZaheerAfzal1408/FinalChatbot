@@ -72,7 +72,7 @@ def train_smoke_model(df, model_dir, scaler_path, model_path, config_path):
     model.save(model_path)
     return model, threshold
 
-def analyze_smoke_incident(asset_name: str, force_retrain: bool = False):
+def analyze_smoke_incident(asset_name: str, force_retrain: bool = False, fetch_hours: int = None):
     """Hierarchical Analyst for Smoke Alarm Network."""
     asset_id = am.get_asset_id(asset_name)
     if not asset_id: return f"Error: {asset_name} unknown."
@@ -90,7 +90,10 @@ def analyze_smoke_incident(asset_name: str, force_retrain: bool = False):
 
     is_cached = os.path.exists(model_path) and os.path.exists(scaler_path)
     
-    df_raw = am.fetch_smoke_data(asset_id, days=30)
+    if fetch_hours is None:
+        fetch_hours = 24 * 30 # Default 30 days
+    
+    df_raw = am.fetch_smoke_data(asset_id, days=max(1, fetch_hours // 24))
     if df_raw is None or len(df_raw) < SMOKE_TIME_STEPS:
         return f"Error: Insufficient data for {asset_name}."
 
@@ -150,13 +153,13 @@ def analyze_smoke_incident(asset_name: str, force_retrain: bool = False):
         logger.error(f"Smoke Analysis Exception: {e}")
         return f"Error: {e}"
 
-def scan_all_smoke_alarms():
+def scan_all_smoke_alarms(fetch_hours: int = None):
     """Global Safety Scanner for all Smoke Alarm assets."""
     if not am.SMOKE_MAPPINGS: am.load_dynamic_mappings()
     all_reports = []
     incidents = []
     for aid, name in am.SMOKE_MAPPINGS.items():
-        res = analyze_smoke_incident(name)
+        res = analyze_smoke_incident(name, fetch_hours=fetch_hours)
         if isinstance(res, list):
             all_reports.extend(res)
             incidents.extend([r for r in res if r['anomaly']])

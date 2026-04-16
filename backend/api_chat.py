@@ -117,14 +117,14 @@ def coldroom_expert_node(state: AgentState):
     matches = re.findall(r'cold\s*room\s*(\d*)', query.lower())
     outputs = []
     if state.get("check_all", False) or not matches:
-        outputs.append(scan_all_coldrooms())
+        outputs.append(scan_all_coldrooms(fetch_hours=3))
     else:
         for num in matches:
             num = num.strip() if num.strip() else "1"
             alias = f"coldroom{num}"
             aid = am.get_asset_id(alias)
             asset_name = am.get_asset_name(aid) if aid else alias
-            report = analyze_coldroom(asset_name, force_retrain=state.get("force_retrain", False))
+            report = analyze_coldroom(asset_name, force_retrain=state.get("force_retrain", False), fetch_hours=3)
             outputs.append(report)
     return {"tool_outputs": outputs, "next_node": "root_cause"}
 
@@ -141,10 +141,10 @@ def smoke_expert_node(state: AgentState):
             found_assets.append(name)
             
     if state.get("check_all", False) or not found_assets:
-        outputs.append(scan_all_smoke_alarms())
+        outputs.append(scan_all_smoke_alarms(fetch_hours=3))
     else:
         for name in found_assets:
-            report = analyze_smoke_incident(name, force_retrain=state.get("force_retrain", False))
+            report = analyze_smoke_incident(name, force_retrain=state.get("force_retrain", False), fetch_hours=3)
             outputs.append(report)
             
     return {"tool_outputs": outputs, "next_node": "root_cause"}
@@ -155,14 +155,14 @@ def tank_expert_node(state: AgentState):
     matches = re.findall(r'(?:tank|physical|refinery)\s*(\d*)', query.lower())
     outputs = []
     if state.get("check_all", False) or not matches:
-        outputs.append(scan_all_tanks())
+        outputs.append(scan_all_tanks(fetch_hours=3))
     else:
         for num in matches:
             num = num.strip() if num.strip() else "1"
             alias = f"tank{num}"
             aid = am.get_asset_id(alias)
             asset_name = am.get_asset_name(aid) if aid else alias
-            report = analyze_tank(asset_name, force_retrain=state.get("force_retrain", False))
+            report = analyze_tank(asset_name, force_retrain=state.get("force_retrain", False), fetch_hours=3)
             outputs.append(report)
     return {"tool_outputs": outputs, "next_node": "root_cause"}
 
@@ -211,6 +211,7 @@ graph = workflow.compile()
 @app.post("/api/chat")
 async def chat_handler(request: ChatRequest):
     """Unified Entry Point for the Multi-Agent System."""
+    logger.info(f"Industrial Data Pipeline triggered: '{request.message}'")
     try:
         initial_state = {
             "messages": [HumanMessage(content=request.message)],
@@ -222,14 +223,59 @@ async def chat_handler(request: ChatRequest):
             "check_all": False,
             "force_retrain": False
         }
+        
+        # Execute the Graph
         result = graph.invoke(initial_state)
         tool_outputs = result.get("tool_outputs", [])
+        
+        # Synthesize final response using Groq
         if tool_outputs:
-            summary_prompt = f"Synthesize industrial report for query '{request.message}'. Data: {tool_outputs}. Root Cause: {result.get('root_cause_analysis')}. Recs: {result.get('recommendations')}."
+            # Flatten outputs for incident detection
+            flattened = []
+            for o in tool_outputs:
+                if isinstance(o, dict) and "all_reports" in o: flattened.extend(o["all_reports"])
+                elif isinstance(o, list): flattened.extend(o)
+                else: flattened.append(o)
+
+            is_incident = any(
+                isinstance(o, dict) and o.get("status") in ["Anomaly", "Critical", "Warning", "incident"]
+                for o in flattened
+            )
+            
+            show_tech = is_incident or any(x in request.message.lower() for x in ["incident reading", "mse", "threshold", "technical"])
+            
+            root_cause = result.get("root_cause_analysis", "")
+            recommendations = result.get("recommendations", "")
+            
+            summary_prompt = f"""
+            You are 'The Foreman', an Industrial Multi-Agent Supervisor. 
+            Original Query: "{request.message}"
+            
+            INDUSTRIAL DIAGNOSTICS:
+            - Tool Data: {tool_outputs}
+            - Root Cause Analysis (from Investigator): {root_cause}
+            - Safety Recommendations (from Advisor): {recommendations}
+            
+            DIAGNOSTIC RULES:
+            1. **DATA VISIBILITY**: Include the sensor readings bullet points.
+            2. **STRUCTURE**: Use bold headers: ### Diagnostic Summary, ### Root Cause Analysis, ### Foreman's Recommendations.
+            3. **STATUS**: Use 🔴 **CRITICAL**, 🟡 **WARNING**, 🟢 **OPERATIONAL**, or ⚪ **NO DATA AVAILABLE**.
+            4. **TECHNICAL**: {'Include the MSE and Threshold clearly.' if show_tech else 'Hide technical MSE values.'}
+            5. Integrate the investigator's findings and the advisor's actions seamlessly.
+            """
             final_response = llm.invoke(summary_prompt).content
         else:
-            final_response = "I am 'The Foreman'. How can I help you check your industrial assets?"
-        return {"reply": final_response, "data": tool_outputs[0] if len(tool_outputs) == 1 else {"multi_report": tool_outputs}}
+            # Check if an agent gave a specific reason for no results (e.g. room not found)
+            last_msg = result['messages'][-1]
+            if isinstance(last_msg, AIMessage) and last_msg.content != request.message:
+                final_response = last_msg.content
+            else:
+                final_response = "I am 'The Foreman'. I can help you monitor Smoke Alarms. Which room should I check for you?"
+            
+        return {
+            "reply": final_response,
+            "data": tool_outputs[0] if len(tool_outputs) == 1 else {"multi_report": tool_outputs}
+        }
     except Exception as e:
         logger.error(f"Graph execution failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

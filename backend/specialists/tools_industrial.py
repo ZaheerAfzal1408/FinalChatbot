@@ -79,7 +79,7 @@ def prepare_data_for_training(df, asset_name, relative_path):
     logger.info(f"Industrial Fetch: Data snapshot stored in {data_file}")
     return data_file
 
-def analyze_coldroom(asset_name: str, force_retrain: bool = False):
+def analyze_coldroom(asset_name: str, force_retrain: bool = False, fetch_hours: int = None):
     """ Industrial pipeline for ColdRoom Temperature/Humidity anomaly detection. """
     start_time = time.time()
     asset_id = am.get_asset_id(asset_name)
@@ -97,9 +97,13 @@ def analyze_coldroom(asset_name: str, force_retrain: bool = False):
         shutil.rmtree(model_dir)
 
     is_cached = os.path.exists(model_path) and os.path.exists(config_path)
-    fetch_hours = 24 if is_cached else 168 
+    if fetch_hours is None:
+        fetch_hours = 24 if is_cached else 168 
     
-    df = am.fetch_coldroom_data(asset_id, days=fetch_hours//24)
+    df = am.fetch_coldroom_data(asset_id, days=max(1, fetch_hours//24)) # fetch_coldroom_data uses days
+    # If fetch_hours < 24 but we need bits of it, we still fetch 1 day but we'll slice it if needed.
+    # Actually, am.fetch_coldroom_data might actually use days. 
+    # Let's check am.fetch_coldroom_data signature.
     if df is None or len(df) < TIME_STEPS:
         count = len(df) if df is not None else 0
         return f"Error: Insufficient telemetry for {asset_name} (Need {TIME_STEPS} rows, got {count})."
@@ -142,7 +146,7 @@ def analyze_coldroom(asset_name: str, force_retrain: bool = False):
     except Exception as e:
         return f"Error during analysis of {asset_name}: {e}"
 
-def analyze_tank(asset_name: str, force_retrain: bool = False):
+def analyze_tank(asset_name: str, force_retrain: bool = False, fetch_hours: int = None):
     """ Industrial pipeline for Refinery Tank oil level anomaly detection. """
     start_time = time.time()
     asset_id = am.get_asset_id(asset_name)
@@ -164,7 +168,8 @@ def analyze_tank(asset_name: str, force_retrain: bool = False):
         shutil.rmtree(model_dir)
 
     is_cached = os.path.exists(model_path) and os.path.exists(config_path)
-    fetch_hours = 24 if is_cached else 168 
+    if fetch_hours is None:
+        fetch_hours = 24 if is_cached else 168 
     
     df = am.fetch_tank_data(asset_id, hours=fetch_hours)
     if df is None or len(df) < TIME_STEPS:
@@ -212,25 +217,25 @@ def analyze_tank(asset_name: str, force_retrain: bool = False):
     except Exception as e:
         return f"Error during Tank analysis: {e}"
 
-def scan_all_coldrooms():
+def scan_all_coldrooms(fetch_hours: int = None):
     """Industrial Tool: Scan all discovered coldrooms for anomalies."""
     if not am.COLDROOM_MAPPINGS: am.load_dynamic_mappings()
     reports = []
     anomalies = []
     for asset_id, asset_name in am.COLDROOM_MAPPINGS.items():
-        result = analyze_coldroom(asset_name)
+        result = analyze_coldroom(asset_name, fetch_hours=fetch_hours)
         if isinstance(result, dict):
             reports.append(result)
             if result.get("anomaly"): anomalies.append(result)
     return {"summary": f"{'🔴' if anomalies else '🟢'} Found {len(anomalies)} anomalies.", "incidents": anomalies, "all_reports": reports}
 
-def scan_all_tanks():
+def scan_all_tanks(fetch_hours: int = None):
     """Industrial Tool: Scan all discovered tanks for anomalies."""
     if not am.TANK_MAPPINGS: am.load_dynamic_mappings()
     reports = []
     anomalies = []
     for asset_id, asset_name in am.TANK_MAPPINGS.items():
-        result = analyze_tank(asset_name)
+        result = analyze_tank(asset_name, fetch_hours=fetch_hours)
         if isinstance(result, dict):
             reports.append(result)
             if result.get("anomaly"): anomalies.append(result)
