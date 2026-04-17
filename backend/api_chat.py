@@ -112,12 +112,20 @@ def supervisor_node(state: AgentState):
     return {"next_node": next_node, "check_all": False, "force_retrain": force_retrain}
 
 def coldroom_expert_node(state: AgentState):
-    """Expert node for ColdRoom diagnostics."""
-    query = state['messages'][-1].content
-    matches = re.findall(r'cold\s*room\s*(\d*)', query.lower())
+    """Expert node for ColdRoom diagnostics (Incident-only reports for global scans)."""
+    query = state['messages'][-1].content.lower()
+    # Require at least one digit for specific identification to avoid matching 'coldrooms' plural
+    matches = re.findall(r'cold\s*room\s*(\d+)', query)
     outputs = []
-    if state.get("check_all", False) or not matches:
-        outputs.append(scan_all_coldrooms(fetch_hours=3))
+    
+    is_global = any(x in query for x in ["all", "last incident", "incidents", "scan", "status", "system"]) or state.get("check_all", False)
+    
+    if is_global and not matches:
+        logger.info("Foreman: Global coldroom scan triggered. Filtering for incidents.")
+        scan_res = scan_all_coldrooms(fetch_hours=3)
+        outputs = scan_res.get('incidents', [])
+        if not outputs:
+            outputs = [{"summary": "All Coldrooms are OPERATIONAL. No active anomalies detected.", "status": "Normal"}]
     else:
         for num in matches:
             num = num.strip() if num.strip() else "1"
@@ -126,36 +134,76 @@ def coldroom_expert_node(state: AgentState):
             asset_name = am.get_asset_name(aid) if aid else alias
             report = analyze_coldroom(asset_name, force_retrain=state.get("force_retrain", False), fetch_hours=3)
             outputs.append(report)
+            
+    if not outputs and not is_global:
+        # If no specific matches found but user asked general question
+        scan_res = scan_all_coldrooms(fetch_hours=3)
+        outputs = scan_res.get('incidents', []) or [{"summary": "No coldroom incidents found.", "status": "Normal"}]
+
     return {"tool_outputs": outputs, "next_node": "root_cause"}
 
 def smoke_expert_node(state: AgentState):
-    """ Expert node for Smoke & Fire safety diagnostics. """
+    """ Expert node for Smoke & Fire safety (Incident-only reporting). """
     query = state['messages'][-1].content.lower()
     outputs = []
     
-    # 1. Detect rooms (e.g., "canteen", "security room")
-    found_assets = []
-    if not am.SMOKE_MAPPINGS: am.load_dynamic_mappings()
-    for aid, name in am.SMOKE_MAPPINGS.items():
-        if name.lower() in query:
-            found_assets.append(name)
+    # 1. Detect rooms/zones
+    target_zone = None
+    for z_num in ["1", "2", "3", "4", "5"]:
+        if f"zone {z_num}" in query or f"zone{z_num}" in query:
+            target_zone = f"Zone {z_num}"
+            break
+
+    is_global = any(x in query for x in ["all", "last incident", "incidents", "scan", "safet"]) or state.get("check_all", False)
+    
+    if is_global or target_zone:
+        logger.info(f"Foreman: Smoke scan triggered. Target: {target_zone or 'All'}")
+        scan_res = scan_all_smoke_alarms(fetch_hours=3)
+        all_reports = scan_res.get('all_reports', [])
+        
+        if target_zone:
+            all_reports = [r for r in all_reports if target_zone in r.get('zone', '')]
             
-    if state.get("check_all", False) or not found_assets:
-        outputs.append(scan_all_smoke_alarms(fetch_hours=3))
+        incidents = [r for r in all_reports if r.get('anomaly')]
+        
+        if incidents:
+            outputs = incidents
+        else:
+            msg = f"No fire safety incidents detected{' in ' + target_zone if target_zone else ''}."
+            outputs = [{"summary": msg, "status": "Normal"}]
     else:
+        found_assets = []
+        if not am.SMOKE_MAPPINGS: am.load_dynamic_mappings()
+        for aid, name in am.SMOKE_MAPPINGS.items():
+            if name.lower() in query:
+                found_assets.append(name)
+        
         for name in found_assets:
             report = analyze_smoke_incident(name, force_retrain=state.get("force_retrain", False), fetch_hours=3)
-            outputs.append(report)
+            if isinstance(report, list): outputs.extend(report)
+            elif isinstance(report, dict): outputs.append(report)
             
+    if not outputs and not is_global:
+        scan_res = scan_all_smoke_alarms(fetch_hours=3)
+        outputs = scan_res.get('incidents', []) or [{"summary": "No smoke alarm incidents detected.", "status": "Normal"}]
+
     return {"tool_outputs": outputs, "next_node": "root_cause"}
 
 def tank_expert_node(state: AgentState):
-    """Expert node for Refinery Tank diagnostics."""
-    query = state['messages'][-1].content
-    matches = re.findall(r'(?:tank|physical|refinery)\s*(\d*)', query.lower())
+    """Expert node for Refinery Tank diagnostics (Incident-only reporting for global scans)."""
+    query = state['messages'][-1].content.lower()
+    # Require at least one digit for specific identification
+    matches = re.findall(r'(?:tank|physical|refinery)\s*(\d+)', query)
     outputs = []
-    if state.get("check_all", False) or not matches:
-        outputs.append(scan_all_tanks(fetch_hours=3))
+
+    is_global = any(x in query for x in ["all", "last incident", "incidents", "scan", "status", "system"]) or state.get("check_all", False)
+    
+    if is_global and not matches:
+        logger.info("Foreman: Global refinery tank scan triggered. Filtering for incidents.")
+        scan_res = scan_all_tanks(fetch_hours=3)
+        outputs = scan_res.get('incidents', [])
+        if not outputs:
+            outputs = [{"summary": "All Refinery Tanks are OPERATIONAL. No oil level anomalies detected.", "status": "Normal"}]
     else:
         for num in matches:
             num = num.strip() if num.strip() else "1"
@@ -164,6 +212,11 @@ def tank_expert_node(state: AgentState):
             asset_name = am.get_asset_name(aid) if aid else alias
             report = analyze_tank(asset_name, force_retrain=state.get("force_retrain", False), fetch_hours=3)
             outputs.append(report)
+
+    if not outputs and not is_global:
+        scan_res = scan_all_tanks(fetch_hours=3)
+        outputs = scan_res.get('incidents', []) or [{"summary": "No tank anomalies found.", "status": "Normal"}]
+
     return {"tool_outputs": outputs, "next_node": "root_cause"}
 
 def root_cause_node(state: AgentState):

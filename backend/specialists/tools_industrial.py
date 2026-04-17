@@ -220,23 +220,71 @@ def analyze_tank(asset_name: str, force_retrain: bool = False, fetch_hours: int 
 def scan_all_coldrooms(fetch_hours: int = None):
     """Industrial Tool: Scan all discovered coldrooms for anomalies."""
     if not am.COLDROOM_MAPPINGS: am.load_dynamic_mappings()
+    logger.info(f"Industrial Hub: Starting global scan for {len(am.COLDROOM_MAPPINGS)} coldrooms...")
     reports = []
     anomalies = []
+    passed = 0
+    failed = 0
+    
     for asset_id, asset_name in am.COLDROOM_MAPPINGS.items():
-        result = analyze_coldroom(asset_name, fetch_hours=fetch_hours)
-        if isinstance(result, dict):
-            reports.append(result)
-            if result.get("anomaly"): anomalies.append(result)
-    return {"summary": f"{'🔴' if anomalies else '🟢'} Found {len(anomalies)} anomalies.", "incidents": anomalies, "all_reports": reports}
+        try:
+            logger.debug(f"Scanning coldroom: {asset_name} ({asset_id})")
+            result = analyze_coldroom(asset_name, fetch_hours=fetch_hours)
+            if isinstance(result, dict):
+                reports.append(result)
+                passed += 1
+                if result.get("anomaly"):
+                    logger.info(f"Anomaly detected in {asset_name}!")
+                    anomalies.append(result)
+            else:
+                logger.warning(f"Analysis for {asset_name} returned non-dict result: {result}")
+                failed += 1
+        except Exception as e:
+            logger.error(f"Exception during analysis of {asset_name}: {e}")
+            failed += 1
+    
+    logger.info(f"Global coldroom scan complete. Passed: {passed}, Failed: {failed}, Anomalies: {len(anomalies)}")
+    return {
+        "summary": f"{'🔴' if anomalies else '🟢'} Scanned {len(am.COLDROOM_MAPPINGS)} assets. Found {len(anomalies)} anomalies. {passed} checked successfuly.",
+        "incidents": anomalies, 
+        "all_reports": reports,
+        "scanned_count": len(am.COLDROOM_MAPPINGS),
+        "operational_count": passed - len(anomalies),
+        "failed_count": failed
+    }
 
 def scan_all_tanks(fetch_hours: int = None):
     """Industrial Tool: Scan all discovered tanks for anomalies."""
     if not am.TANK_MAPPINGS: am.load_dynamic_mappings()
+    logger.info(f"Industrial Hub: Starting global scan for {len(am.TANK_MAPPINGS)} refinery tanks...")
     reports = []
     anomalies = []
+    passed = 0
+    failed = 0
+
     for asset_id, asset_name in am.TANK_MAPPINGS.items():
-        result = analyze_tank(asset_name, fetch_hours=fetch_hours)
-        if isinstance(result, dict):
-            reports.append(result)
-            if result.get("anomaly"): anomalies.append(result)
-    return {"summary": f"{'🔴' if anomalies else '🟢'} Found {len(anomalies)} anomalies.", "incidents": anomalies, "all_reports": reports}
+        try:
+            logger.debug(f"Scanning tank: {asset_name} ({asset_id})")
+            result = analyze_tank(asset_name, fetch_hours=fetch_hours)
+            if isinstance(result, dict):
+                reports.append(result)
+                passed += 1
+                if result.get("anomaly"):
+                    logger.info(f"Anomaly detected in {asset_name}!")
+                    anomalies.append(result)
+            else:
+                logger.warning(f"Analysis for {asset_name} returned non-dict result: {result}")
+                failed += 1
+        except Exception as e:
+            logger.error(f"Exception during analysis of {asset_name}: {e}")
+            failed += 1
+            
+    logger.info(f"Global tank scan complete. Passed: {passed}, Failed: {failed}, Anomalies: {len(anomalies)}")
+    return {
+        "summary": f"{'🔴' if anomalies else '🟢'} Scanned {len(am.TANK_MAPPINGS)} refinery tanks. Found {len(anomalies)} anomalies. {passed} checked successfuly.",
+        "incidents": anomalies, 
+        "all_reports": reports,
+        "scanned_count": len(am.TANK_MAPPINGS),
+        "operational_count": passed - len(anomalies),
+        "failed_count": failed
+    }

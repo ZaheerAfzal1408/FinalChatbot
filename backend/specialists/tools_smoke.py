@@ -156,11 +156,17 @@ def analyze_smoke_incident(asset_name: str, force_retrain: bool = False, fetch_h
 def scan_all_smoke_alarms(fetch_hours: int = None):
     """Global Safety Scanner for all Smoke Alarm assets."""
     if not am.SMOKE_MAPPINGS: am.load_dynamic_mappings()
+    logger.info(f"Safety Hub: Starting global scan for {len(am.SMOKE_MAPPINGS)} smoke alarm assets...")
     all_reports = []
     incidents = []
     for aid, name in am.SMOKE_MAPPINGS.items():
         res = analyze_smoke_incident(name, fetch_hours=fetch_hours)
         if isinstance(res, list):
             all_reports.extend(res)
-            incidents.extend([r for r in res if r['anomaly']])
+            new_incidents = [r for r in res if r['anomaly']]
+            if new_incidents:
+                logger.info(f"Incident(s) detected in {name}!")
+            incidents.extend(new_incidents)
+    
+    logger.info(f"Global smoke scan complete. Found {len(incidents)} incidents across {len(am.SMOKE_MAPPINGS)} assets.")
     return {"summary": f"Found {len(incidents)} fire safety incidents.", "incidents": incidents, "all_reports": all_reports}
